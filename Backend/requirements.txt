@@ -1,6 +1,4 @@
-Flask
-flask-cors
-python-dotenv
 pyTelegramBotAPI
-psycopg2-binary
+flask
 gunicorn
+psycopg2-binary
