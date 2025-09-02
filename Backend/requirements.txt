@@ -1,3 +1,2 @@
-pyTelegramBotAPI==4.12.0
-Flask==2.3.2
-psycopg2-binary==2.9.7
+pyTelegramBotAPI
+psycopg2-binary
