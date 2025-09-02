@@ -7,8 +7,8 @@ import psycopg2
 # -----------------------------
 # 🔹 Config
 # -----------------------------
-TOKEN = os.getenv("BOT_TOKEN")  # Render env me set karna hoga
-DATABASE_URL = os.getenv("DATABASE_URL")  # Render ka Postgres DB URL
+TOKEN = os.getenv("BOT_TOKEN")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 bot = telebot.TeleBot(TOKEN)
 
@@ -73,6 +73,7 @@ def start(message):
     markup.add("💰 Earn", "📊 Balance")
     markup.add("⚡ Upgrade", "🏆 Leaderboard")
     markup.add("🔗 Referral Link")
+    markup.add("🎮 Play Mini App")  # new button for Web App
 
     bot.send_message(
         message.chat.id,
@@ -135,6 +136,15 @@ def referral(message):
     user_id = str(message.from_user.id)
     link = f"https://t.me/{bot.get_me().username}?start={user_id}"
     bot.send_message(message.chat.id, f"🔗 Referral link:\n{link}\n\n👥 1 referral = +10 coins")
+
+# 🎮 Play Mini App (Telegram Web App)
+@bot.message_handler(func=lambda m: m.text == "🎮 Play Mini App")
+def play_mini_app(message):
+    markup = types.InlineKeyboardMarkup()
+    web_app = types.WebAppInfo(url="https://hamster-miniapp-1.onrender.com")
+    button = types.InlineKeyboardButton(text="Open Mini App", web_app=web_app)
+    markup.add(button)
+    bot.send_message(message.chat.id, "Play the Mini App:", reply_markup=markup)
 
 # -----------------------------
 # 🔹 Flask for Render Health Check
