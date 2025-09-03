@@ -1,1 +1,1 @@
-web: python backend/bot.py
+worker: python bot.py
