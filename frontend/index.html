@@ -8,26 +8,53 @@
 </head>
 <body>
   <div class="container">
+
+    <!-- Top Balance Bar -->
+    <div class="topbar">
+      <div id="balance">Balance: —</div>
+      <div id="perclick">Per Click: —</div>
+    </div>
+
+    <!-- Title -->
     <h1>🐹 Hamster Clicker</h1>
-    <div id="balance">Balance: —</div>
-    <div id="perclick">Per Click: —</div>
 
-    <button id="earnBtn" class="big">Click to Earn</button>
+    <!-- Big Earn Button -->
+    <button id="earnBtn" class="big">Tap to Earn</button>
 
-    <div class="row">
-      <button id="buyClick">Buy +Per Click (50)</button>
-      <button id="buyAuto">Buy Auto Clicker (100)</button>
+    <!-- Upgrades -->
+    <div class="card">
+      <h3>⚡ Upgrades</h3>
+      <div class="row">
+        <button id="buyClick">+Per Click (50×level)</button>
+        <button id="buyAuto">Auto Clicker (100×next)</button>
+      </div>
     </div>
 
-    <div class="row">
-      <button id="dailyBtn">Daily Bonus</button>
-      <button id="leaderBtn">Leaderboard</button>
+    <!-- Extras -->
+    <div class="card">
+      <h3>🎁 Extras</h3>
+      <div class="row">
+        <button id="dailyBtn">Daily Bonus</button>
+        <button id="leaderBtn">Leaderboard</button>
+      </div>
     </div>
 
+    <!-- Message -->
     <div id="message"></div>
-    <div id="leaderboard" class="card" style="display:none;"></div>
+
+    <!-- Leaderboard Modal -->
+    <div id="leaderModal" class="modal">
+      <div class="modal-content">
+        <span class="close">&times;</span>
+        <h3>🏆 Leaderboard</h3>
+        <div id="leaderboard"></div>
+      </div>
+    </div>
+
   </div>
 
+  <!-- Telegram WebApp SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="/script.js"></script>
 </body>
   </html>
