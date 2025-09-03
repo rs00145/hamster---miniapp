@@ -1,8 +1,9 @@
 import os
 import telebot
 from telebot import types
-from flask import Flask, request
+from flask import Flask, request, send_from_directory
 import psycopg2
+import threading
 
 # -----------------------------
 # 🔹 Config
@@ -73,7 +74,7 @@ def start(message):
     markup.add("💰 Earn", "📊 Balance")
     markup.add("⚡ Upgrade", "🏆 Leaderboard")
     markup.add("🔗 Referral Link")
-    markup.add("🎮 Play Mini App")  # new button for Web App
+    markup.add("🎮 Play Mini App")
 
     bot.send_message(
         message.chat.id,
@@ -84,7 +85,6 @@ def start(message):
         reply_markup=markup
     )
 
-# Earn
 @bot.message_handler(func=lambda m: m.text == "💰 Earn")
 def earn(message):
     user_id = str(message.from_user.id)
@@ -93,7 +93,6 @@ def earn(message):
     update_user(user_id, balance=new_balance)
     bot.send_message(message.chat.id, f"🎉 +{user['per_click']} Coin!\n💎 Balance: {new_balance}")
 
-# Balance
 @bot.message_handler(func=lambda m: m.text == "📊 Balance")
 def balance(message):
     user_id = str(message.from_user.id)
@@ -103,7 +102,6 @@ def balance(message):
         f"📊 Balance: {user['balance']} coins\n⚡ Per Click: {user['per_click']}\n👥 Referrals: {user['referrals']}"
     )
 
-# Upgrade
 @bot.message_handler(func=lambda m: m.text == "⚡ Upgrade")
 def upgrade(message):
     user_id = str(message.from_user.id)
@@ -117,7 +115,6 @@ def upgrade(message):
     else:
         bot.send_message(message.chat.id, f"❌ Not enough coins!\nCost: {cost}\n💎 Balance: {user['balance']}")
 
-# Leaderboard
 @bot.message_handler(func=lambda m: m.text == "🏆 Leaderboard")
 def leaderboard(message):
     cursor.execute("SELECT user_id, balance FROM users ORDER BY balance DESC LIMIT 10")
@@ -130,33 +127,38 @@ def leaderboard(message):
         text += f"{i}. User {row[0]} → {row[1]} coins\n"
     bot.send_message(message.chat.id, text)
 
-# Referral
 @bot.message_handler(func=lambda m: m.text == "🔗 Referral Link")
 def referral(message):
     user_id = str(message.from_user.id)
     link = f"https://t.me/{bot.get_me().username}?start={user_id}"
     bot.send_message(message.chat.id, f"🔗 Referral link:\n{link}\n\n👥 1 referral = +10 coins")
 
-# 🎮 Play Mini App (Telegram Web App)
 @bot.message_handler(func=lambda m: m.text == "🎮 Play Mini App")
 def play_mini_app(message):
     markup = types.InlineKeyboardMarkup()
-    web_app = types.WebAppInfo(url="https://hamster-miniapp-1.onrender.com")
+    web_app = types.WebAppInfo(url="https://hamster-miniapp.onrender.com")
     button = types.InlineKeyboardButton(text="Open Mini App", web_app=web_app)
     markup.add(button)
     bot.send_message(message.chat.id, "Play the Mini App:", reply_markup=markup)
 
 # -----------------------------
-# 🔹 Flask for Render Health Check
+# 🔹 Flask App
 # -----------------------------
 app = Flask(__name__)
+FRONTEND_FOLDER = os.path.join(os.path.dirname(__file__), "../frontend")
 
-@app.route('/')
-def home():
-    return "Bot is running!"
+@app.route("/")
+def serve_index():
+    return send_from_directory(FRONTEND_FOLDER, "index.html")
 
+@app.route("/<path:path>")
+def serve_static(path):
+    return send_from_directory(FRONTEND_FOLDER, path)
+
+# -----------------------------
+# 🔹 Run
+# -----------------------------
 if __name__ == "__main__":
-    import threading
     t = threading.Thread(target=lambda: bot.polling(none_stop=True))
     t.start()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
