@@ -1,2 +1,3 @@
-flask
-gunicorn
+Flask
+pyTelegramBotAPI
+psycopg2-binary
