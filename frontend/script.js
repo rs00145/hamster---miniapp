@@ -1,5 +1,6 @@
 const API_BASE = "https://hamster-miniapp.onrender.com";  // backend base
 
+// Elements
 const balanceEl = document.getElementById('balance');
 const perclickEl = document.getElementById('perclick');
 const earnBtn = document.getElementById('earnBtn');
@@ -8,8 +9,6 @@ const buyAuto = document.getElementById('buyAuto');
 const dailyBtn = document.getElementById('dailyBtn');
 const leaderBtn = document.getElementById('leaderBtn');
 const message = document.getElementById('message');
-
-// Modal refs
 const leaderModal = document.getElementById('leaderModal');
 const leaderClose = document.querySelector('.close');
 const leaderDiv = document.getElementById('leaderboard');
@@ -18,22 +17,23 @@ const leaderDiv = document.getElementById('leaderboard');
 let tg = window.Telegram?.WebApp;
 tg && tg.expand();
 
-let user_id = tg?.initDataUnsafe?.user?.id;
-let initData = tg?.initData || "";  // 🔹 Security validation string
+let user_id = tg?.initDataUnsafe?.user?.id || null;
+let initData = tg?.initData || "";  // 🔹 secure string
 
 if (!user_id) {
   const qs = new URLSearchParams(location.search);
   user_id = qs.get('user_id');
 }
 
-if (!user_id) {
-  showMessage('❌ Error: user_id missing. Open from the Telegram bot.', "error");
+if (!user_id || !initData) {
+  showMessage("❌ Error: open this game from Telegram bot.", "error");
+  throw new Error("Missing user_id or initData");
 }
 
-// 🔹 helper to show messages
+// 🔹 message helper
 function showMessage(text, type = "") {
   message.innerText = text || "";
-  message.className = type ? type : "";
+  message.className = type || "";
   if (text) {
     clearTimeout(showMessage._t);
     showMessage._t = setTimeout(() => {
@@ -43,24 +43,24 @@ function showMessage(text, type = "") {
   }
 }
 
-// 🔹 safe fetch wrapper
+// 🔹 fetch wrapper with error handling
 async function safeFetch(url, options) {
   try {
     const res = await fetch(url, options);
     if (!res.ok) {
       let text = await res.text().catch(() => "");
-      try { const j = JSON.parse(text); text = j.error || text; } catch (e) {}
+      try { const j = JSON.parse(text); text = j.error || text; } catch {}
       throw new Error(text || `HTTP ${res.status}`);
     }
     return await res.json();
   } catch (err) {
-    showMessage(err.message || "⚠️ Network error, try again.", "error");
+    showMessage(err.message || "⚠️ Network error", "error");
     console.error(err);
     return {};
   }
 }
 
-// 🔹 run function with loading state
+// 🔹 run with loading state
 async function withLoading(btn, fn) {
   btn.disabled = true;
   btn.classList.add("loading");
@@ -72,7 +72,7 @@ async function withLoading(btn, fn) {
   }
 }
 
-// ---------------- Fetch user data ----------------
+// ---------------- Fetch user ----------------
 async function fetchUser() {
   const data = await safeFetch(`${API_BASE}/api/user/${user_id}?initData=${encodeURIComponent(initData)}`);
   if (data && data.balance !== undefined) {
@@ -81,11 +81,11 @@ async function fetchUser() {
   }
 }
 
-// ---------------- Earn coins ----------------
+// ---------------- Earn ----------------
 earnBtn.onclick = () => withLoading(earnBtn, async () => {
   const data = await safeFetch(`${API_BASE}/api/earn`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ user_id, initData })
   });
   if (data && data.balance !== undefined) {
@@ -94,26 +94,26 @@ earnBtn.onclick = () => withLoading(earnBtn, async () => {
   }
 });
 
-// ---------------- Buy Per Click ----------------
+// ---------------- Buy Click ----------------
 buyClick.onclick = () => withLoading(buyClick, async () => {
   const data = await safeFetch(`${API_BASE}/api/buy`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_id, item: 'click', initData })
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id, item: "click", initData })
   });
   if (data && data.ok) {
     balanceEl.innerText = `Balance: ${data.balance}`;
     perclickEl.innerText = `Per Click: ${data.per_click}`;
-    showMessage('✅ Per Click upgraded!', "success");
+    showMessage("✅ Per Click upgraded!", "success");
   }
 });
 
-// ---------------- Buy Auto Clicker ----------------
+// ---------------- Buy Auto ----------------
 buyAuto.onclick = () => withLoading(buyAuto, async () => {
   const data = await safeFetch(`${API_BASE}/api/buy`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_id, item: 'auto', initData })
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id, item: "auto", initData })
   });
   if (data && data.ok) {
     balanceEl.innerText = `Balance: ${data.balance}`;
@@ -124,8 +124,8 @@ buyAuto.onclick = () => withLoading(buyAuto, async () => {
 // ---------------- Daily Bonus ----------------
 dailyBtn.onclick = () => withLoading(dailyBtn, async () => {
   const data = await safeFetch(`${API_BASE}/api/daily`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ user_id, initData })
   });
   if (data && data.ok) {
@@ -140,28 +140,25 @@ leaderBtn.onclick = () => withLoading(leaderBtn, async () => {
   const top = await safeFetch(`${API_BASE}/api/leaderboard?initData=${encodeURIComponent(initData)}`);
   if (Array.isArray(top)) {
     html = top.map((r, i) => {
-      return `<div data-username="${(r.username || 'Guest')}">${i + 1}. ${r.username || 'Guest'} — ${r.balance} 💰</div>`;
-    }).join('');
+      return `<div data-username="${r.username || "Guest"}">${i + 1}. ${r.username || "Guest"} — ${r.balance} 💰</div>`;
+    }).join("");
   }
-
   leaderDiv.innerHTML = html;
 
-  // fetch your exact rank & highlight
+  // fetch your rank
   const me = await safeFetch(`${API_BASE}/api/rank/${user_id}?initData=${encodeURIComponent(initData)}`);
   if (me && me.username) {
-    let highlightDone = false;
-    const nodes = leaderDiv.querySelectorAll('div[data-username]');
-    nodes.forEach((n, idx) => {
-      if (n.getAttribute('data-username') === me.username) {
-        n.classList.add('you');
+    let found = false;
+    leaderDiv.querySelectorAll("div[data-username]").forEach((n, idx) => {
+      if (n.getAttribute("data-username") === me.username) {
+        n.classList.add("you");
         n.innerHTML = `⭐ You — Rank ${idx + 1} — ${me.balance} 💰`;
-        highlightDone = true;
+        found = true;
       }
     });
-
-    if (!highlightDone) {
+    if (!found) {
       leaderDiv.innerHTML += `<div style="margin-top:10px;padding-top:8px;border-top:1px solid #ccc;" class="you">
-        ⭐ Your Rank: ${me.rank} — ${me.username || 'You'} (${me.balance} 💰)
+        ⭐ Your Rank: ${me.rank} — ${me.username || "You"} (${me.balance} 💰)
       </div>`;
     }
   }
@@ -169,10 +166,10 @@ leaderBtn.onclick = () => withLoading(leaderBtn, async () => {
   leaderModal.style.display = "block";
 });
 
-// ---------------- Close modal ----------------
+// ---------------- Modal close ----------------
 leaderClose.onclick = () => leaderModal.style.display = "none";
-window.onclick = (e) => { if (e.target === leaderModal) { leaderModal.style.display = "none"; } };
+window.onclick = (e) => { if (e.target === leaderModal) leaderModal.style.display = "none"; };
 
 // ---------------- Init ----------------
 fetchUser();
-setInterval(fetchUser, 10000);  // auto refresh every 10s
+setInterval(fetchUser, 10000);  // auto refresh
