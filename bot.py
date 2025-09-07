@@ -29,14 +29,12 @@ bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 _thread = threading.local()
 
 def get_conn():
-    """Per-thread postgres connection (autocommit)."""
     if not hasattr(_thread, "conn") or _thread.conn.closed:
         _thread.conn = psycopg2.connect(DATABASE_URL, sslmode="require")
         _thread.conn.autocommit = True
     return _thread.conn
 
 def run_query(query, params=(), fetchone=False, fetchall=False):
-    """Thread-safe DB helper"""
     with get_conn().cursor() as cur:
         cur.execute(query, params)
         if fetchone:
@@ -62,7 +60,6 @@ CREATE TABLE IF NOT EXISTS users (
 )
 """)
 
-# In case old table exists without new column:
 run_query("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_auto_at TIMESTAMPTZ")
 
 def row_to_user(row):
@@ -116,39 +113,6 @@ def update_user(user_id, **fields):
     run_query(q, tuple(vals))
 
 # -----------------------------
-# 🔹 Telegram WebApp Security (initData validation)
-# -----------------------------
-BOT_TOKEN = TOKEN.encode()
-
-def check_telegram_auth(init_data: str, max_age_seconds: int = 86400) -> bool:
-    """
-    Validates Telegram WebApp initData.
-    - Parses querystring (k=v&k2=v2...)
-    - Verifies HMAC-SHA256 with secret key = sha256(bot_token)
-    - Optionally checks auth_date age
-    """
-    try:
-        if not init_data:
-            return False
-        pairs = urllib.parse.parse_qsl(init_data, keep_blank_values=True)
-        data = dict(pairs)
-        received_hash = data.pop("hash", None)
-        if not received_hash:
-            return False
-
-        # Optional age check
-        auth_date = int(data.get("auth_date", "0"))
-        if auth_date and (datetime.now(timezone.utc) - datetime.fromtimestamp(auth_date, tz=timezone.utc)).total_seconds() > max_age_seconds:
-            return False
-
-        data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(data.items()))
-        secret_key = hashlib.sha256(BOT_TOKEN).digest()
-        computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
-        return hmac.compare_digest(computed_hash, received_hash)
-    except Exception:
-        return False
-
-# -----------------------------
 # 🔹 Telegram Bot Handlers
 # -----------------------------
 @bot.message_handler(commands=["start"])
@@ -157,7 +121,7 @@ def start(message):
     username = message.from_user.username or message.from_user.first_name
     user = get_user(user_id, username=username)
 
-    # referral logic
+    # referral system
     args = message.text.split()
     if len(args) > 1 and not user["referred_by"]:
         referrer = args[1]
@@ -172,7 +136,7 @@ def start(message):
             try:
                 bot.send_message(
                     referrer,
-                    f"🎉 <b>Referral mila!</b> +10 coins\nTotal referrals: {ref_user['referrals'] + 1}",
+                    f"🎉 <b>Referral joined!</b> +10 coins\nTotal referrals: {ref_user['referrals'] + 1}",
                 )
             except Exception:
                 pass
@@ -188,7 +152,7 @@ def start(message):
         f"👋 Welcome <b>{username}</b>!\n"
         f"💎 Balance: <b>{user['balance']}</b>\n"
         f"⚡ Per Click: <b>{user['per_click']}</b>\n\n"
-        "Tap karo aur coins earn karo 🚀",
+        "Tap to earn coins 🚀",
         reply_markup=markup,
     )
 
@@ -198,11 +162,10 @@ def earn(message):
     user = get_user(user_id, username=message.from_user.username or message.from_user.first_name)
     now = datetime.now(timezone.utc)
 
-    # cooldown = 2 sec
     if user["last_earn_at"]:
         last = datetime.fromisoformat(user["last_earn_at"]).replace(tzinfo=timezone.utc)
         if (now - last).total_seconds() < 2:
-            bot.send_message(message.chat.id, "⏳ Thoda ruk jao! (2 sec cooldown)")
+            bot.send_message(message.chat.id, "⏳ Wait 2 sec cooldown!")
             return
 
     new_balance = user["balance"] + user["per_click"]
@@ -226,18 +189,44 @@ def balance(message):
 def upgrade(message):
     user_id = str(message.from_user.id)
     user = get_user(user_id)
-    cost = user["per_click"] * 50
-    if user["balance"] >= cost:
+
+    markup = types.InlineKeyboardMarkup()
+    markup.add(
+        types.InlineKeyboardButton("👆 Upgrade Click", callback_data="upgrade_click"),
+        types.InlineKeyboardButton("🤖 Upgrade Auto", callback_data="upgrade_auto")
+    )
+    bot.send_message(message.chat.id, "Choose upgrade option:", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data in ["upgrade_click", "upgrade_auto"])
+def upgrade_callback(call):
+    user_id = str(call.from_user.id)
+    user = get_user(user_id)
+
+    if call.data == "upgrade_click":
+        cost = user["per_click"] * 50
+        if user["balance"] < cost:
+            bot.answer_callback_query(call.id, "❌ Not enough coins!")
+            return
         update_user(user_id, balance=user["balance"] - cost, per_click=user["per_click"] + 1)
-        bot.send_message(
-            message.chat.id,
-            f"✅ Upgrade Successful!\n⚡ New Per Click: <b>{user['per_click'] + 1}</b>\n💸 Remaining: <b>{user['balance'] - cost}</b>",
-        )
-    else:
-        bot.send_message(
-            message.chat.id,
-            f"❌ Not enough coins!\nCost: <b>{cost}</b>\n💎 Balance: <b>{user['balance']}</b>",
-        )
+        bot.answer_callback_query(call.id, f"💪 Finger stronger! New per click: {user['per_click'] + 1}")
+
+    elif call.data == "upgrade_auto":
+        cost = (user["auto_clicker_level"] + 1) * 100
+        if user["balance"] < cost:
+            bot.answer_callback_query(call.id, "❌ Not enough coins!")
+            return
+        new_level = user["auto_clicker_level"] + 1
+        update_user(user_id, balance=user["balance"] - cost, auto_clicker_level=new_level)
+
+        boost_msgs = {
+            1: "🚀 Auto-farm started! Coins every 10s!",
+            2: "⚡ Clicker stronger! More coins now!",
+            3: "🔥 Farming like a pro! Speed boost!",
+            5: "🌟 Ultra boost unlocked! You're on fire!",
+            10: "👑 MAX POWER! You are the Coin King!"
+        }
+        msg = boost_msgs.get(new_level, f"✅ Auto Clicker upgraded to Lv.{new_level}!")
+        bot.answer_callback_query(call.id, msg)
 
 @bot.message_handler(func=lambda m: m.text == "🏆 Leaderboard")
 def leaderboard(message):
@@ -299,33 +288,12 @@ def health():
     return {"ok": True, "time": datetime.utcnow().isoformat()}
 
 # -----------------------------
-# 🔹 Auto Clicker Helpers
+# 🔹 Auto Clicker Worker
 # -----------------------------
-AUTO_PERIOD = 10  # seconds
-AUTO_PER_LEVEL = 2  # coins per period per level
-
-def apply_auto_sync(user_id, user=None):
-    """Lazy-sync auto clicker earnings for a user (used by API)."""
-    _user = user or get_user(user_id)
-    lvl = _user["auto_clicker_level"]
-    if lvl <= 0:
-        return _user
-
-    now = datetime.now(timezone.utc)
-    last_auto = _user["last_auto_at"]
-    last_auto_dt = datetime.fromisoformat(last_auto).replace(tzinfo=timezone.utc) if last_auto else now
-    elapsed = (now - last_auto_dt).total_seconds()
-    if elapsed >= AUTO_PERIOD:
-        cycles = int(elapsed // AUTO_PERIOD)
-        earned = lvl * AUTO_PER_LEVEL * cycles
-        new_balance = _user["balance"] + earned
-        update_user(user_id, balance=new_balance, last_auto_at=now)
-        _user["balance"] = new_balance
-        _user["last_auto_at"] = now.isoformat()
-    return _user
+AUTO_PERIOD = 10
+AUTO_PER_LEVEL = 2
 
 def auto_clicker_worker():
-    """Background worker to accrue auto coins even if user doesn't open app."""
     while True:
         rows = run_query(
             "SELECT user_id, auto_clicker_level, balance, last_auto_at FROM users WHERE auto_clicker_level > 0",
@@ -342,127 +310,6 @@ def auto_clicker_worker():
                 earned = lvl * AUTO_PER_LEVEL * cycles
                 update_user(uid, balance=bal + earned, last_auto_at=now)
         time.sleep(5)
-
-# -----------------------------
-# 🔹 API Routes (secure)
-# -----------------------------
-def require_auth_from_args():
-    initData = request.args.get("initData", "")
-    if not check_telegram_auth(initData):
-        return None
-    return initData
-
-def require_auth_from_json():
-    data = request.get_json(silent=True) or {}
-    initData = data.get("initData", "")
-    if not check_telegram_auth(initData):
-        return None, data
-    return initData, data
-
-@app.route("/api/user/<user_id>")
-def api_user(user_id):
-    if not require_auth_from_args():
-        return jsonify({"error": "Invalid initData"}), 403
-    user = get_user(user_id)
-    user = apply_auto_sync(user_id, user)
-    return jsonify(user)
-
-@app.route("/api/earn", methods=["POST"])
-def api_earn():
-    initData, data = require_auth_from_json()
-    if not initData:
-        return jsonify({"error": "Invalid initData"}), 403
-
-    user_id = str(data.get("user_id"))
-    if not user_id:
-        return jsonify({"error": "user_id required"}), 400
-
-    user = get_user(user_id)
-    # lazy sync auto first
-    user = apply_auto_sync(user_id, user)
-
-    now = datetime.now(timezone.utc)
-    # cooldown 2s
-    if user["last_earn_at"]:
-        last = datetime.fromisoformat(user["last_earn_at"]).replace(tzinfo=timezone.utc)
-        if (now - last).total_seconds() < 2:
-            return jsonify({"error": "Cooldown active"}), 429
-
-    new_balance = user["balance"] + user["per_click"]
-    update_user(user_id, balance=new_balance, last_earn_at=now)
-    return jsonify({"balance": new_balance, "per_click": user["per_click"]})
-
-@app.route("/api/buy", methods=["POST"])
-def api_buy():
-    initData, data = require_auth_from_json()
-    if not initData:
-        return jsonify({"error": "Invalid initData"}), 403
-
-    user_id = str(data.get("user_id"))
-    item = data.get("item")
-    if not user_id or not item:
-        return jsonify({"error": "user_id and item required"}), 400
-
-    user = get_user(user_id)
-    user = apply_auto_sync(user_id, user)
-
-    if item == "click":
-        cost = user["per_click"] * 50
-        if user["balance"] < cost:
-            return jsonify({"error": "Not enough coins"}), 400
-        update_user(user_id, balance=user["balance"] - cost, per_click=user["per_click"] + 1)
-        return jsonify({"ok": True, "balance": user["balance"] - cost, "per_click": user["per_click"] + 1})
-
-    elif item == "auto":
-        cost = (user["auto_clicker_level"] + 1) * 100
-        if user["balance"] < cost:
-            return jsonify({"error": "Not enough coins"}), 400
-        update_user(user_id, balance=user["balance"] - cost, auto_clicker_level=user["auto_clicker_level"] + 1)
-        return jsonify({"ok": True, "balance": user["balance"] - cost, "auto_clicker_level": user["auto_clicker_level"] + 1})
-
-    return jsonify({"error": "Invalid item"}), 400
-
-@app.route("/api/daily", methods=["POST"])
-def api_daily():
-    initData, data = require_auth_from_json()
-    if not initData:
-        return jsonify({"error": "Invalid initData"}), 403
-
-    user_id = str(data.get("user_id"))
-    if not user_id:
-        return jsonify({"error": "user_id required"}), 400
-
-    user = get_user(user_id)
-    user = apply_auto_sync(user_id, user)
-
-    now = datetime.now(timezone.utc)
-    bonus = 50
-    if user["daily_claim_at"]:
-        last_claim = datetime.fromisoformat(user["daily_claim_at"]).replace(tzinfo=timezone.utc)
-        if (now - last_claim).total_seconds() < 24 * 3600:
-            return jsonify({"error": "Already claimed"}), 400
-
-    update_user(user_id, balance=user["balance"] + bonus, daily_claim_at=now)
-    return jsonify({"ok": True, "balance": user["balance"] + bonus, "bonus": bonus})
-
-@app.route("/api/leaderboard")
-def api_leaderboard():
-    if not require_auth_from_args():
-        return jsonify({"error": "Invalid initData"}), 403
-
-    rows = run_query("SELECT username, balance FROM users ORDER BY balance DESC LIMIT 10", fetchall=True) or []
-    data = [{"username": r[0], "balance": r[1]} for r in rows]
-    return jsonify(data)
-
-@app.route("/api/rank/<user_id>")
-def api_rank(user_id):
-    if not require_auth_from_args():
-        return jsonify({"error": "Invalid initData"}), 403
-
-    user = get_user(user_id)
-    rows = run_query("SELECT user_id, username, balance FROM users ORDER BY balance DESC", fetchall=True) or []
-    rank = next((i + 1 for i, r in enumerate(rows) if r[0] == user_id), None)
-    return jsonify({"username": user["username"], "balance": user["balance"], "rank": rank})
 
 # -----------------------------
 # 🔹 Run
